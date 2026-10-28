@@ -36,6 +36,7 @@ object SupabaseBackend {
     data class CommunityPost(val id: String, val userId: String, val body: String, val createdAt: String)
     data class CreatorItem(val id: String, val title: String, val description: String = "")
     data class LiveKitCredentials(val serverUrl: String, val token: String, val roomName: String, val role: String, val expiresInSeconds: Int)
+    data class LiveSession(val id: String, val title: String, val userId: String, val createdAt: String)
 
     val userId: String? get() = currentUserId
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank() && !currentUserId.isNullOrBlank()
@@ -276,6 +277,19 @@ object SupabaseBackend {
                 expiresInSeconds = json.optInt("expiresInSeconds", 600)
             )
         }
+    }
+
+    suspend fun loadCurrentLiveSessions(): List<LiveSession> = withContext(Dispatchers.IO) {
+        val rows = JSONArray(request("/rest/v1/live_sessions?select=id,title,user_id,created_at&status=eq.live&order=created_at.desc&limit=50"))
+        (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            LiveSession(row.getString("id"), row.optString("title", "Live stream"), row.optString("user_id"), row.optString("created_at"))
+        }
+    }
+
+    suspend fun setLiveSessionStatus(sessionId: String, status: String) = withContext(Dispatchers.IO) {
+        require(status in setOf("live", "ended", "scheduled")) { "Invalid live session status." }
+        request("/rest/v1/live_sessions?id=eq.$sessionId", "PATCH", JSONObject().put("status", status).toString(), mapOf("Prefer" to "return=minimal"))
     }
 
     suspend fun createLiveSession(title: String): CreatorItem = withContext(Dispatchers.IO) {
