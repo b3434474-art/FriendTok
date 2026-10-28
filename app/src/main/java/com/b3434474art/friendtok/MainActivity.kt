@@ -230,18 +230,6 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                                     Column { Text("Create post", style = MaterialTheme.typography.titleMedium); Text("Share a text update") }
                                 }
                             }
-                            Card(Modifier.fillMaxWidth().clickable { createMode = "playlist"; creatorTitle = ""; creatorDescription = "" }) {
-                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Icon(Icons.Default.PlaylistAdd, null, modifier = Modifier.size(36.dp))
-                                    Column { Text("New playlist", style = MaterialTheme.typography.titleMedium); Text("Organize videos into a playlist") }
-                                }
-                            }
-                            Card(Modifier.fillMaxWidth().clickable { createMode = "podcast"; creatorTitle = ""; creatorDescription = "" }) {
-                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Icon(Icons.Default.Podcasts, null, modifier = Modifier.size(36.dp))
-                                    Column { Text("New podcast", style = MaterialTheme.typography.titleMedium); Text("Create a podcast page") }
-                                }
-                            }
                         }
                         "upload" -> {
                             Text("Upload videos", style = MaterialTheme.typography.headlineSmall)
@@ -294,9 +282,9 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         "live" -> {
                             Text("Go live", style = MaterialTheme.typography.headlineSmall)
                             OutlinedTextField(creatorTitle, { creatorTitle = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Live stream title") }, singleLine = true)
-                            Text("This saves a live-session listing. Actual live video needs a streaming provider, which isn't connected yet.", style = MaterialTheme.typography.bodySmall)
+                            Text("Live video needs a streaming provider. FriendTok will use LiveKit for real-time video; its server credentials must be configured securely before broadcasting can start.", style = MaterialTheme.typography.bodySmall)
                             Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
-                                runTask { SupabaseBackend.createLiveSession(creatorTitle); creatorTitle = ""; createMode = "menu"; "Live session listing saved. Live video streaming is not active yet." }
+                                runTask { SupabaseBackend.createLiveSession(creatorTitle); creatorTitle = ""; createMode = "menu"; "Live session listing saved. Streaming provider setup is still required before anyone can watch live video." }
                             }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Sensors, null); Text("Set up live session") }
                             if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before setting up a live session.")
                             TextButton(onClick = { createMode = "menu" }) { Text("Back") }
