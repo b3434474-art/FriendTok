@@ -285,7 +285,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                             OutlinedButton(onClick = { message = "Analytics: $profileViews total video views • ${ownPosts.size} videos • $followers followers • $followingCount following" }) { Icon(Icons.Default.BarChart, null); Text("Analytics") }
                             OutlinedButton(onClick = { message = "Edit your display name and bio below." }) { Icon(Icons.Default.Edit, null); Text("Edit profile") }
                         }
-                        Button(onClick = { message = "Community features are coming soon." }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Groups, null); Text("Community") }
+                        Button(onClick = { communityOpen = true; runTask { communityPosts.clear(); communityPosts.addAll(SupabaseBackend.loadCommunityPosts(SupabaseBackend.userId ?: error("Sign in to open your community."))); "Community loaded." } }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Groups, null); Text("Community") }
                         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                             listOf("Shorts", "Posts").forEach { section ->
                                 Column(Modifier.clickable { profileSection = section }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -339,6 +339,21 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
             }
         }
     }
+    if (communityOpen) AlertDialog(
+        onDismissRequest = { communityOpen = false },
+        title = { Text("Your community") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(communityText, { communityText = it.take(1000) }, label = { Text("Write a community post") }, modifier = Modifier.fillMaxWidth())
+                Button(enabled = SupabaseBackend.isSignedIn && communityText.isNotBlank() && !busy, onClick = {
+                    runTask { SupabaseBackend.addCommunityPost(communityText); communityText = ""; communityPosts.clear(); communityPosts.addAll(SupabaseBackend.loadCommunityPosts(SupabaseBackend.userId!!)); "Community post published." }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Publish") }
+                if (communityPosts.isEmpty()) Text("No community posts yet.")
+                communityPosts.take(5).forEach { post -> Text(post.body, style = MaterialTheme.typography.bodyMedium) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { communityOpen = false }) { Text("Done") } }
+    )
     val id = commentFor
     if (id != null) AlertDialog(
         onDismissRequest = { commentFor = null; commentText = "" },
