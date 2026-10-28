@@ -124,7 +124,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     }
 
     Scaffold(bottomBar = {
-        NavigationBar { Tab.entries.forEach { t ->
+        NavigationBar { Tab.entries.filter { it != Tab.CreatorProfile }.forEach { t ->
             val icon = when(t) { Tab.Home -> Icons.Default.Home; Tab.Discover -> Icons.Default.Search; Tab.Create -> Icons.Default.Add; Tab.Likes -> Icons.Default.Favorite; Tab.Profile -> Icons.Default.Person }
             NavigationBarItem(selected = tab == t, onClick = { tab = t }, icon = { Icon(icon, null) }, label = { Text(t.name) })
         } }
