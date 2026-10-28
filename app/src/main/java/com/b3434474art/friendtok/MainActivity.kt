@@ -61,7 +61,6 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var name by remember { mutableStateOf("FriendTok user") }
     var user by remember { mutableStateOf("newfriend") }
     var bio by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var caption by remember { mutableStateOf("") }
@@ -179,13 +178,12 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                 Tab.Profile -> {
                     Text("Account & profile", style = MaterialTheme.typography.headlineSmall)
                     Text(if (isSignedIn) "Signed in to FriendTok" else "Sign in or create an account")
-                    OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true)
+                    OutlinedTextField(user, { user = it.filter { c -> c.isLetterOrDigit() || c == '_' }.take(24) }, Modifier.fillMaxWidth(), label = { Text("Username (3–24 letters, numbers, or _)") }, singleLine = true)
                     OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password (8+ characters)") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
                     if (!isSignedIn) {
-                        OutlinedTextField(user, { user = it.filter { c -> c.isLetterOrDigit() || c == '_' }.take(24) }, Modifier.fillMaxWidth(), label = { Text("Username (for sign up)") }, singleLine = true)
                         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Display name") }, singleLine = true)
-                        Button(enabled = !busy, onClick = { runTask { SupabaseBackend.signUp(email, password, user, name) } }, modifier = Modifier.fillMaxWidth()) { Text("Create account") }
-                        Button(enabled = !busy, onClick = { runTask { SupabaseBackend.signIn(email, password) } }, modifier = Modifier.fillMaxWidth()) { Text("Sign in") }
+                        Button(enabled = !busy, onClick = { runTask { SupabaseBackend.signUp(user, password, name) } }, modifier = Modifier.fillMaxWidth()) { Text("Create account") }
+                        Button(enabled = !busy, onClick = { runTask { SupabaseBackend.signIn(user, password) } }, modifier = Modifier.fillMaxWidth()) { Text("Sign in") }
                     } else {
                         OutlinedTextField(user, { user = it.filter { c -> c.isLetterOrDigit() || c == '_' }.take(24) }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true)
                         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Display name") }, singleLine = true)
