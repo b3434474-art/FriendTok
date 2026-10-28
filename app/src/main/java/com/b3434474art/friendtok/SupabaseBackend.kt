@@ -33,6 +33,7 @@ object SupabaseBackend {
 
     data class Profile(val id: String, val username: String, val displayName: String, val bio: String, val avatarUrl: String?)
     data class ProfileStats(val followers: Long, val following: Long, val videos: Long, val views: Long)
+    data class CommunityPost(val id: String, val userId: String, val body: String, val createdAt: String)
 
     val userId: String? get() = currentUserId
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank() && !currentUserId.isNullOrBlank()
@@ -220,6 +221,17 @@ object SupabaseBackend {
         } else {
             request("/rest/v1/likes?post_id=eq.$postId&user_id=eq.$id", "DELETE")
         }
+    }
+
+    suspend fun loadCommunityPosts(profileId: String): List<CommunityPost> = withContext(Dispatchers.IO) {
+        val json = JSONArray(request("/rest/v1/community_posts?select=id,user_id,body,created_at&user_id=eq.$profileId&order=created_at.desc&limit=100"))
+        (0 until json.length()).map { i -> json.getJSONObject(i).let { CommunityPost(it.getString("id"), it.getString("user_id"), it.getString("body"), it.optString("created_at")) } }
+    }
+
+    suspend fun addCommunityPost(body: String) = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to post to your community.")
+        require(body.isNotBlank() && body.length <= 1000) { "Community posts must be 1–1000 characters." }
+        request("/rest/v1/community_posts", "POST", JSONObject().put("user_id", id).put("body", body.trim()).toString(), mapOf("Prefer" to "return=minimal"))
     }
 
     suspend fun addComment(postId: String, body: String) = withContext(Dispatchers.IO) {
