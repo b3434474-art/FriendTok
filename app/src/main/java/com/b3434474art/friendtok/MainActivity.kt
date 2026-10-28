@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-private enum class Tab { Home, Discover, Create, Likes, Profile, CreatorProfile }
+private enum class Tab { Home, Discover, Create, Likes, Profile, CreatorProfile, Live }
 private data class Post(
     val id: String, val uri: String, val caption: String, val user: String,
     val liked: Boolean = false, val comments: List<String> = emptyList(), val ownerId: String = "", val viewCount: Int = 0
@@ -105,6 +105,8 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var refresh by remember { mutableIntStateOf(0) }
     val posts = remember { mutableStateListOf<Post>() }
     var activeLiveRoom by remember { mutableStateOf<Room?>(null) }
+    val currentLives = remember { mutableStateListOf<SupabaseBackend.LiveSession>() }
+    var liveRefresh by remember { mutableIntStateOf(0) }
     val isSignedIn = SupabaseBackend.isSignedIn
 
     DisposableEffect(Unit) {
@@ -205,7 +207,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     }
 
     Scaffold(bottomBar = {
-        NavigationBar { Tab.entries.filter { it != Tab.CreatorProfile }.forEach { t ->
+        NavigationBar { Tab.entries.filter { it != Tab.CreatorProfile && it != Tab.Live }.forEach { t ->
             val icon = when(t) { Tab.Home -> Icons.Default.Home; Tab.Discover -> Icons.Default.Search; Tab.Create -> Icons.Default.Add; Tab.Likes -> Icons.Default.Favorite; Tab.Profile, Tab.CreatorProfile -> Icons.Default.Person }
             NavigationBarItem(selected = tab == t, onClick = { tab = t }, icon = { Icon(icon, null) }, label = { Text(t.name) })
         } }
@@ -372,6 +374,37 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         if (SupabaseBackend.isSignedIn) runTask { SupabaseBackend.setLike(p.id, false); refresh++; "Like removed." }
                     }, { commentFor = p.id }) } }
                 }
+                Tab.Live -> {
+                    LaunchedEffect(liveRefresh) {
+                        runCatching {
+                            currentLives.clear()
+                            currentLives.addAll(SupabaseBackend.loadCurrentLiveSessions())
+                        }.onFailure { message = "Could not load current lives: " + (it.message ?: "check your connection") }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Sensors, null, tint = Color(0xFFFF3B30))
+                        Text("Current lives", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { liveRefresh++ }) { Icon(Icons.Default.Refresh, "Refresh lives") }
+                    }
+                    Text("Join a creator who's broadcasting right now.", style = MaterialTheme.typography.bodySmall)
+                    if (currentLives.isEmpty()) Text("Nobody is live right now. Check back soon!")
+                    else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(currentLives, key = { it.id }) { live ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Icon(Icons.Default.Sensors, null, tint = Color(0xFFFF3B30), modifier = Modifier.size(32.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(live.title, fontWeight = FontWeight.Bold)
+                                        Text("Creator " + live.userId.take(8), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text("LIVE", color = Color(0xFFFF3B30), fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { tab = Tab.Profile }) { Text("Back to profile") }
+                }
                 Tab.CreatorProfile -> {
                     val creatorId = creatorProfileId
                     LaunchedEffect(creatorId) {
@@ -394,6 +427,9 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         }
                     }
                     if (creatorBio.isNotBlank()) Text(creatorBio)
+                    OutlinedButton(onClick = { tab = Tab.Live; liveRefresh++ }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Sensors, null, tint = Color(0xFFFF3B30)); Spacer(Modifier.width(8.dp)); Text("LIVE • Current livestreams")
+                    }
                     if (creatorId != SupabaseBackend.userId) Button(enabled = SupabaseBackend.isSignedIn, onClick = {
                         runTask { SupabaseBackend.setFollowing(creatorId ?: return@runTask "Creator not found.", !creatorFollowing); creatorFollowing = !creatorFollowing; "Follow status updated." }
                     }, modifier = Modifier.fillMaxWidth()) { Text(if (creatorFollowing) "Following" else "Follow") }
@@ -425,6 +461,9 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         }
                         Text("Tap profile picture to change it", style = MaterialTheme.typography.labelSmall)
                         if (bio.isNotBlank()) Text(bio, maxLines = 2)
+                        OutlinedButton(onClick = { tab = Tab.Live; liveRefresh++ }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Sensors, null, tint = Color(0xFFFF3B30)); Spacer(Modifier.width(8.dp)); Text("LIVE • Current livestreams")
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(onClick = { message = "Analytics: $profileViews total video views • ${ownPosts.size} videos • $followers followers • $followingCount following" }) { Icon(Icons.Default.BarChart, null); Text("Analytics") }
                             OutlinedButton(onClick = { message = "Edit your display name and bio below." }) { Icon(Icons.Default.Edit, null); Text("Edit profile") }
