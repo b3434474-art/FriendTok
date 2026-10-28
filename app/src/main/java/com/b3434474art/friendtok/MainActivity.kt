@@ -14,6 +14,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.VideoView
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -131,17 +135,23 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
             Spacer(Modifier.height(10.dp))
             when(tab) {
                 Tab.Home -> {
-                    Text("Community feed", style = MaterialTheme.typography.headlineSmall)
                     if (posts.isEmpty()) {
                         Spacer(Modifier.height(24.dp))
                         Text("No public videos yet. Sign in and upload the first one!")
                         Button(onClick = { tab = Tab.Create }) { Icon(Icons.Default.Add, null); Text("Create video") }
-                    } else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(posts, key = { it.id }) { p ->
-                            PostView(p, play, {
-                                if (!SupabaseBackend.isSignedIn) message = "Sign in to like videos."
-                                else runTask { SupabaseBackend.setLike(p.id, !p.liked); refresh++; "Like updated." }
-                            }, { commentFor = p.id })
+                    } else {
+                        val pagerState = rememberPagerState(pageCount = { posts.size })
+                        VerticalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f), pageSpacing = 0.dp) { page ->
+                            val p = posts[page]
+                            SwipeFeedPost(
+                                post = p,
+                                active = pagerState.currentPage == page,
+                                like = {
+                                    if (!SupabaseBackend.isSignedIn) message = "Sign in to like videos."
+                                    else runTask { SupabaseBackend.setLike(p.id, !p.liked); refresh++; "Like updated." }
+                                },
+                                comment = { commentFor = p.id }
+                            )
                         }
                     }
                 }
@@ -213,22 +223,69 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
 }
 
 @Composable
+private fun SwipeFeedPost(post: Post, active: Boolean, like: () -> Unit, comment: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    tag = ""
+                    setOnPreparedListener { player ->
+                        player.isLooping = true
+                        if (active) start() else pause()
+                    }
+                }
+            },
+            update = { video ->
+                if (video.tag != post.uri) {
+                    video.tag = post.uri
+                    video.setVideoURI(Uri.parse(post.uri))
+                    video.setOnPreparedListener { player ->
+                        player.isLooping = true
+                        if (active) video.start() else video.pause()
+                    }
+                } else if (active) {
+                    if (!video.isPlaying) video.start()
+                } else if (video.isPlaying) video.pause()
+            }
+        )
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x22000000), Color.Transparent, Color(0xCC000000)))))
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth(0.78f).padding(start = 16.dp, end = 8.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("@${post.user}", color = Color.White, fontWeight = FontWeight.Bold)
+            if (post.caption.isNotBlank()) Text(post.caption, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+            Text("Swipe up for next video", color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall)
+        }
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(end = 10.dp, bottom = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            IconButton(onClick = like) {
+                Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = if (post.liked) Color(0xFFFF4F9A) else Color.White, modifier = Modifier.size(30.dp))
+            }
+            IconButton(onClick = comment) {
+                Icon(Icons.Default.ChatBubbleOutline, "Comment", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+            IconButton(onClick = { }) {
+                Icon(Icons.Default.Share, "Share", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun PostView(post: Post, play: (String) -> Unit, like: () -> Unit, comment: () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("@" + post.user, fontWeight = FontWeight.Bold)
-            Box(Modifier.fillMaxWidth().height(210.dp).background(
-                Brush.linearGradient(listOf(Color(0xFF37214D), Color(0xFF111827), Color(0xFF7A2456))), RoundedCornerShape(14.dp)
-            ).clickable { play(post.uri) }, contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(52.dp))
-                    Text("Tap to play video", color = Color.White)
-                }
-            }
-            Text(post.caption)
+            Text("@"+post.user, fontWeight = FontWeight.Bold)
+            Text(post.caption.ifBlank { "Video post" })
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = like) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null); Text(if (post.liked) " Liked" else " Like") }
-                TextButton(onClick = comment) { Text("Add comment") }
+                TextButton(onClick = { play(post.uri) }) { Icon(Icons.Default.PlayArrow, null); Text("Play video") }
+                TextButton(onClick = like) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null); Text("Like") }
+                TextButton(onClick = comment) { Text("Comment") }
             }
         }
     }
