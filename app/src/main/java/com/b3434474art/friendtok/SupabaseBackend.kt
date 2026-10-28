@@ -116,13 +116,13 @@ object SupabaseBackend {
     }
 
     suspend fun loadPublicFeed(): List<FeedPost> = withContext(Dispatchers.IO) {
-        val json = JSONArray(request("/rest/v1/posts?select=id,user_id,video_path,caption,created_at,post_views(count)&order=created_at.desc&limit=100"))
+        // Avoid selecting nested post_views rows here because their RLS policy may
+        // intentionally prevent public reads of individual view records.
+        val json = JSONArray(request("/rest/v1/posts?select=id,user_id,video_path,caption,created_at&order=created_at.desc&limit=100"))
         (0 until json.length()).map { i ->
             val item = json.getJSONObject(i)
-            val viewRows = item.optJSONArray("post_views")
-            val views = if (viewRows != null && viewRows.length() > 0) viewRows.getJSONObject(0).optInt("count") else 0
             FeedPost(item.getString("id"), item.getString("user_id"), item.getString("video_path"),
-                item.optString("caption"), item.optString("created_at"), views)
+                item.optString("caption"), item.optString("created_at"), 0)
         }
     }
 
