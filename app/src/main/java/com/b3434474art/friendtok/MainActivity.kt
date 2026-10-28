@@ -1,49 +1,27 @@
 package com.b3434474art.friendtok
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,200 +30,137 @@ import androidx.compose.ui.unit.sp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Block supported screenshots and screen-recording captures in this app window.
-        // This cannot prevent filming the display with a separate device.
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
-
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
-            var darkMode by remember { mutableStateOf(true) }
-            FriendTokTheme(darkMode = darkMode) {
-                FriendTokApp(
-                    darkMode = darkMode,
-                    onThemeChange = { darkMode = it }
-                )
+            var dark by remember { mutableStateOf(true) }
+            MaterialTheme(colorScheme = if (dark) darkColorScheme(primary = Color(0xFFFF4F9A)) else lightColorScheme(primary = Color(0xFFD81B70))) {
+                FriendTok(dark, { dark = it }, { uri ->
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(Uri.parse(uri), "video/*"); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }) }
+                })
             }
         }
     }
 }
+private enum class Tab { Home, Discover, Create, Likes, Profile }
+private data class Post(val id: Int, val uri: String, val caption: String, val user: String,
+                        val liked: Boolean = false, val comments: List<String> = emptyList())
 
 @Composable
-private fun FriendTokTheme(darkMode: Boolean, content: @Composable () -> Unit) {
-    val colors = if (darkMode) {
-        darkColorScheme(
-            primary = Color(0xFFFF4F9A),
-            secondary = Color(0xFFB9A2FF),
-            background = Color(0xFF101014),
-            surface = Color(0xFF1B1B22)
-        )
-    } else {
-        lightColorScheme(
-            primary = Color(0xFFD81B70),
-            secondary = Color(0xFF6550B5),
-            background = Color(0xFFFFF8FC),
-            surface = Color(0xFFFFFFFF)
-        )
+private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) -> Unit) {
+    var tab by remember { mutableStateOf(Tab.Home) }
+    var name by remember { mutableStateOf("FriendTok user") }
+    var user by remember { mutableStateOf("newfriend") }
+    var bio by remember { mutableStateOf("Hey! I'm on FriendTok.") }
+    var caption by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf("") }
+    var commentText by remember { mutableStateOf("") }
+    var commentFor by remember { mutableStateOf<Int?>(null) }
+    var message by remember { mutableStateOf("") }
+    var nextId by remember { mutableIntStateOf(1) }
+    val posts = remember { mutableStateListOf<Post>() }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) { posts.add(0, Post(nextId++, uri.toString(), caption.ifBlank { "My video" }, "@$user")); caption = ""; message = "Added to local feed."; tab = Tab.Home }
     }
-    MaterialTheme(colorScheme = colors, content = content)
-}
-
-private enum class Tab(val label: String) {
-    Home("Home"),
-    Discover("Discover"),
-    Create("Create"),
-    Likes("Likes"),
-    Profile("Profile")
-}
-
-@Composable
-private fun FriendTokApp(darkMode: Boolean, onThemeChange: (Boolean) -> Unit) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            NavigationBar {
-                Tab.entries.forEachIndexed { index, tab ->
-                    val icon = when (tab) {
-                        Tab.Home -> Icons.Default.Home
-                        Tab.Discover -> Icons.Default.Explore
-                        Tab.Create -> Icons.Default.Add
-                        Tab.Likes -> Icons.Default.FavoriteBorder
-                        Tab.Profile -> Icons.Default.Person
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == RESULT_OK && uri != null) { posts.add(0, Post(nextId++, uri.toString(), caption.ifBlank { "My video" }, "@$user")); caption = ""; message = "Recording added."; tab = Tab.Home }
+        else if (result.resultCode == RESULT_OK) message = "Camera did not return a video link."
+    }
+    Scaffold(bottomBar = {
+        NavigationBar { Tab.entries.forEach { t ->
+            val icon = when(t) { Tab.Home -> Icons.Default.Home; Tab.Discover -> Icons.Default.Search; Tab.Create -> Icons.Default.Add; Tab.Likes -> Icons.Default.Favorite; Tab.Profile -> Icons.Default.Person }
+            NavigationBarItem(selected = tab == t, onClick = { tab = t }, icon = { Icon(icon, null) }, label = { Text(t.name) })
+        } }
+    }) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
+            Text("FriendTok", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+            if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(10.dp))
+            when(tab) {
+                Tab.Home -> {
+                    Text("Your feed", style = MaterialTheme.typography.headlineSmall)
+                    Text("Local videos on this device only.")
+                    if (posts.isEmpty()) {
+                        Spacer(Modifier.height(24.dp)); Text("Your feed is ready. Add a video to begin.")
+                        Button(onClick = { tab = Tab.Create }) { Icon(Icons.Default.Add, null); Text("Create video") }
+                    } else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) { items(posts, key = { it.id }) { p -> PostView(p, play, {
+                        val i = posts.indexOfFirst { it.id == p.id }; if (i >= 0) posts[i] = p.copy(liked = !p.liked)
+                    }, { commentFor = p.id }) } }
+                }
+                Tab.Discover -> {
+                    Text("Discover", style = MaterialTheme.typography.headlineSmall)
+                    OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("Search local captions/users") })
+                    val found = posts.filter { it.caption.contains(search, true) || it.user.contains(search, true) }
+                    LazyColumn { items(found, key = { it.id }) { p -> PostView(p, play, {
+                        val i = posts.indexOfFirst { it.id == p.id }; if (i >= 0) posts[i] = p.copy(liked = !p.liked)
+                    }, { commentFor = p.id }) } }
+                }
+                Tab.Create -> {
+                    Text("Create a video", style = MaterialTheme.typography.headlineSmall)
+                    OutlinedTextField(caption, { caption = it }, Modifier.fillMaxWidth(), label = { Text("Caption") })
+                    Button(onClick = { camera.launch(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 60) }) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Videocam, null); Text("Record video (60 sec max)") }
+                    Button(onClick = { gallery.launch("video/*") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null); Text("Choose from gallery") }
+                    Text("These videos are not uploaded online; backend intentionally omitted.")
+                }
+                Tab.Likes -> {
+                    Text("Liked videos", style = MaterialTheme.typography.headlineSmall)
+                    val liked = posts.filter { it.liked }
+                    if (liked.isEmpty()) Text("Like a video to see it here.")
+                    LazyColumn { items(liked, key = { it.id }) { p -> PostView(p, play, {
+                        val i = posts.indexOfFirst { it.id == p.id }; if (i >= 0) posts[i] = p.copy(liked = false)
+                    }, { commentFor = p.id }) } }
+                }
+                Tab.Profile -> {
+                    Text("Your profile", style = MaterialTheme.typography.headlineSmall)
+                    Text("Local profile — no online account")
+                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Display name") })
+                    OutlinedTextField(user, { user = it.filter { c -> c.isLetterOrDigit() || c == '_' }.take(24) }, Modifier.fillMaxWidth(), label = { Text("Username") })
+                    OutlinedTextField(bio, { bio = it.take(160) }, Modifier.fillMaxWidth(), label = { Text("Bio") })
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Dark mode"); Switch(dark, setDark)
                     }
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = { Icon(icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
-                    )
+                    Text("Profile edits only last for this session. Real sign-in and synced profiles need a backend.")
                 }
             }
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "FriendTok",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.onBackground
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-
-            when (Tab.entries[selectedTab]) {
-                Tab.Home -> HomeScreen()
-                Tab.Discover -> PlaceholderScreen("Discover", "Find public videos from the FriendTok community.")
-                Tab.Create -> PlaceholderScreen("Create a video", "Camera recording and gallery upload are coming next.")
-                Tab.Likes -> PlaceholderScreen("Liked videos", "Videos you like will appear here after accounts are connected.")
-                Tab.Profile -> SettingsProfileScreen(darkMode, onThemeChange)
-            }
-        }
     }
-}
-
-@Composable
-private fun HomeScreen() {
-    Text("Your feed", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(8.dp))
-    Text(
-        "Short videos. Good friends. Your corner of the internet.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)
+    val id = commentFor
+    if (id != null) AlertDialog(
+        onDismissRequest = { commentFor = null; commentText = "" },
+        title = { Text("Comments") },
+        text = {
+            Column {
+                val p = posts.firstOrNull { it.id == id }
+                if (p == null || p.comments.isEmpty()) Text("No comments yet.")
+                else p.comments.forEach { Text("• " + it) }
+                OutlinedTextField(commentText, { commentText = it.take(200) }, label = { Text("Write a comment") })
+            }
+        },
+        confirmButton = { TextButton(onClick = {
+            val i = posts.indexOfFirst { it.id == id }
+            if (i >= 0 && commentText.isNotBlank()) posts[i] = posts[i].copy(comments = posts[i].comments + commentText.trim())
+            commentText = ""; commentFor = null
+        }) { Text("Add comment") } },
+        dismissButton = { TextButton(onClick = { commentFor = null }) { Text("Close") } }
     )
-    Spacer(Modifier.height(18.dp))
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier.padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(230.dp)
-                    .background(
-                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                            listOf(Color(0xFF37214D), Color(0xFF111827), Color(0xFF7A2456))
-                        ),
-                        shape = RoundedCornerShape(18.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(62.dp)
-                            .background(Color.White.copy(alpha = 0.14f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text("Your first video goes here", color = Color.White, fontWeight = FontWeight.SemiBold)
-                }
-            }
-            Text("Welcome to FriendTok!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(
-                "The feed will show public videos after the backend is connected.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
-            )
-            Button(onClick = { /* Create flow is planned */ }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Text("  Create a video")
-            }
-        }
-    }
 }
 
 @Composable
-private fun PlaceholderScreen(title: String, description: String) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(10.dp))
-    Text(description, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f))
-}
-
-@Composable
-private fun SettingsProfileScreen(darkMode: Boolean, onThemeChange: (Boolean) -> Unit) {
-    Text("Profile & settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(18.dp))
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Dark mode", fontWeight = FontWeight.SemiBold)
-                Text(
-                    if (darkMode) "On" else "Off",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
+private fun PostView(post: Post, play: (String) -> Unit, like: () -> Unit, comment: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(post.user, fontWeight = FontWeight.Bold)
+            Box(Modifier.fillMaxWidth().height(210.dp).background(Brush.linearGradient(listOf(Color(0xFF37214D), Color(0xFF111827), Color(0xFF7A2456))), RoundedCornerShape(14.dp)).clickable { play(post.uri) }, contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(52.dp)); Text("Tap to play video", color = Color.White) }
             }
-            Switch(checked = darkMode, onCheckedChange = onThemeChange)
+            Text(post.caption)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = like) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null); Text(if (post.liked) " Liked" else " Like") }
+                TextButton(onClick = comment) { Text("Comments (" + post.comments.size + ")") }
+            }
         }
     }
-    Spacer(Modifier.height(14.dp))
-    Text("Account sign-in, public profile editing, and account deletion will be added with the backend.")
 }
