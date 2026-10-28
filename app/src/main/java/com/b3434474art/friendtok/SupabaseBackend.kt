@@ -27,8 +27,12 @@ object SupabaseBackend {
         val userId: String,
         val videoPath: String,
         val caption: String,
-        val createdAt: String
+        val createdAt: String,
+        val viewCount: Int = 0
     )
+
+    data class Profile(val id: String, val username: String, val displayName: String, val bio: String, val avatarUrl: String?)
+    data class ProfileStats(val followers: Long, val following: Long, val videos: Long, val views: Long)
 
     val userId: String? get() = currentUserId
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank() && !currentUserId.isNullOrBlank()
@@ -108,12 +112,61 @@ object SupabaseBackend {
     }
 
     suspend fun loadPublicFeed(): List<FeedPost> = withContext(Dispatchers.IO) {
-        val json = JSONArray(request("/rest/v1/posts?select=id,user_id,video_path,caption,created_at&order=created_at.desc&limit=100"))
+        val json = JSONArray(request("/rest/v1/posts?select=id,user_id,video_path,caption,created_at,post_views(count)&order=created_at.desc&limit=100"))
         (0 until json.length()).map { i ->
             val item = json.getJSONObject(i)
+            val viewRows = item.optJSONArray("post_views")
+            val views = if (viewRows != null && viewRows.length() > 0) viewRows.getJSONObject(0).optInt("count") else 0
             FeedPost(item.getString("id"), item.getString("user_id"), item.getString("video_path"),
-                item.optString("caption"), item.optString("created_at"))
+                item.optString("caption"), item.optString("created_at"), views)
         }
+    }
+
+    suspend fun loadProfile(profileId: String): Profile = withContext(Dispatchers.IO) {
+        val rows = JSONArray(request("/rest/v1/profiles?select=id,username,display_name,bio,avatar_url&id=eq.$profileId&limit=1"))
+        if (rows.length() == 0) Profile(profileId, profileId.take(8), profileId.take(8), "", null)
+        else rows.getJSONObject(0).let { Profile(it.getString("id"), it.optString("username"), it.optString("display_name"), it.optString("bio"), it.optString("avatar_url").takeIf { url -> url.isNotBlank() && url != "null" }) }
+    }
+
+    suspend fun profileStats(profileId: String): ProfileStats = withContext(Dispatchers.IO) {
+        val rows = JSONArray(request("/rest/v1/rpc/friendtok_profile_stats", "POST", JSONObject().put("profile_user_id", profileId).toString()))
+        val row = rows.optJSONObject(0) ?: JSONObject()
+        ProfileStats(row.optLong("follower_count"), row.optLong("following_count"), row.optLong("video_count"), row.optLong("view_count"))
+    }
+
+    suspend fun isFollowing(profileId: String): Boolean = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: return@withContext false
+        JSONArray(request("/rest/v1/follows?select=follower_id&follower_id=eq.$id&followed_id=eq.$profileId&limit=1")).length() > 0
+    }
+
+    suspend fun setFollowing(profileId: String, follow: Boolean) = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to follow creators.")
+        require(id != profileId) { "You cannot follow your own account." }
+        if (follow) request("/rest/v1/follows", "POST", JSONObject().put("follower_id", id).put("followed_id", profileId).toString(), mapOf("Prefer" to "resolution=ignore-duplicates,return=minimal"))
+        else request("/rest/v1/follows?follower_id=eq.$id&followed_id=eq.$profileId", "DELETE")
+    }
+
+    suspend fun recordView(postId: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("post_id", postId)
+        currentUserId?.let { body.put("viewer_id", it) }
+        request("/rest/v1/post_views", "POST", body.toString(), mapOf("Prefer" to "return=minimal"))
+    }
+
+    suspend fun uploadAvatar(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to upload a profile picture.")
+        val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+        require(mime in listOf("image/jpeg", "image/png", "image/webp")) { "Choose a JPG, PNG, or WebP image." }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Could not read that image.")
+        require(bytes.size <= 5 * 1024 * 1024) { "Profile pictures must be 5 MB or smaller." }
+        val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+        val path = "$id/avatar.$ext"
+        val req = Request.Builder().url(BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/friendtok-avatars/" + path)
+            .header("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY).header("Authorization", "Bearer " + (accessToken ?: error("Sign in first.")))
+            .header("Content-Type", mime).header("x-upsert", "true").put(bytes.toRequestBody(mime.toMediaType())).build()
+        http.newCall(req).execute().use { if (!it.isSuccessful) error("Avatar upload failed (${it.code}).") }
+        val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/friendtok-avatars/" + path
+        request("/rest/v1/profiles?id=eq.$id", "PATCH", JSONObject().put("avatar_url", url).toString(), mapOf("Prefer" to "return=minimal"))
+        url
     }
 
     suspend fun saveProfile(username: String, displayName: String, bio: String) = withContext(Dispatchers.IO) {
