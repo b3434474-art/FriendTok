@@ -21,6 +21,8 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.VideoView
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -68,6 +70,11 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var name by remember { mutableStateOf("FriendTok user") }
     var user by remember { mutableStateOf("newfriend") }
     var bio by remember { mutableStateOf("") }
+    var avatarUrl by remember { mutableStateOf<String?>(null) }
+    var followers by remember { mutableLongStateOf(0L) }
+    var followingCount by remember { mutableLongStateOf(0L) }
+    var profileViews by remember { mutableLongStateOf(0L) }
+    var draftCaptions by remember { mutableStateOf(context.getSharedPreferences("friendtok_drafts", 0).getStringSet("captions", emptySet())?.toList() ?: emptyList()) }
     var password by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var caption by remember { mutableStateOf("") }
@@ -97,6 +104,26 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
             message = "Online feed loaded: " + posts.size + " videos."
         } catch (e: Exception) {
             message = "Could not load online feed: " + (e.message ?: "check your connection")
+        }
+    }
+
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) runTask { avatarUrl = SupabaseBackend.uploadAvatar(context, uri); "Profile picture updated." }
+    }
+
+    LaunchedEffect(refresh, isSignedIn) {
+        if (SupabaseBackend.isSignedIn) {
+            runCatching {
+                val profile = SupabaseBackend.loadProfile(SupabaseBackend.userId!!)
+                user = profile.username
+                name = profile.displayName
+                bio = profile.bio
+                avatarUrl = profile.avatarUrl
+                val stats = SupabaseBackend.profileStats(profile.id)
+                followers = stats.followers
+                followingCount = stats.following
+                profileViews = stats.views
+            }
         }
     }
 
@@ -171,6 +198,12 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                 Tab.Create -> {
                     Text("Create a video", style = MaterialTheme.typography.headlineSmall)
                     OutlinedTextField(caption, { caption = it }, Modifier.fillMaxWidth(), label = { Text("Caption") })
+                    OutlinedButton(onClick = {
+                        val saved = (draftCaptions + caption).distinct()
+                        context.getSharedPreferences("friendtok_drafts", 0).edit().putStringSet("captions", saved.toSet()).apply()
+                        draftCaptions = saved
+                        message = "Draft saved on this device."
+                    }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null); Text("Save draft") }
                     Text("Sign in to upload videos to the public feed. Maximum upload size: 100 MB.", style = MaterialTheme.typography.bodySmall)
                     Button(enabled = !busy, onClick = { camera.launch(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 60) }) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Videocam, null); Text("Record video (60 sec max)")
@@ -196,16 +229,20 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                     if (isSignedIn) {
                         val ownPosts = posts.filter { it.user == (SupabaseBackend.userId?.take(8) ?: "") }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(88.dp), tint = MaterialTheme.colorScheme.primary)
+                            Box(Modifier.size(88.dp).clickable { avatarPicker.launch("image/*") }, contentAlignment = Alignment.Center) {
+                                if (avatarUrl != null) AsyncImage(model = avatarUrl, contentDescription = "Profile picture", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                else Icon(Icons.Default.AccountCircle, null, modifier = Modifier.fillMaxSize(), tint = MaterialTheme.colorScheme.primary)
+                            }
                             Column {
                                 Text(name, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                                 Text("@$user", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("0 followers  ›  ${ownPosts.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("$followers followers  ›  ${ownPosts.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
+                        Text("Tap profile picture to change it", style = MaterialTheme.typography.labelSmall)
                         if (bio.isNotBlank()) Text(bio, maxLines = 2)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(onClick = { message = "Analytics will be available when view tracking is added." }) { Icon(Icons.Default.BarChart, null); Text("Analytics") }
+                            OutlinedButton(onClick = { message = "Analytics: $profileViews total video views • ${ownPosts.size} videos • $followers followers • $followingCount following" }) { Icon(Icons.Default.BarChart, null); Text("Analytics") }
                             OutlinedButton(onClick = { message = "Edit your display name and bio below." }) { Icon(Icons.Default.Edit, null); Text("Edit profile") }
                         }
                         Button(onClick = { message = "Community features are coming soon." }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Groups, null); Text("Community") }
@@ -225,7 +262,8 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                             item {
                                 Column(Modifier.fillMaxWidth().clickable { message = "Draft saving is not available yet." }.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) { Icon(Icons.Default.InsertDriveFile, null, modifier = Modifier.size(28.dp)) }
-                                    Text("Drafts", style = MaterialTheme.typography.labelSmall)
+                                    Text("Drafts (${draftCaptions.size})", style = MaterialTheme.typography.labelSmall)
+                                    draftCaptions.take(2).forEach { draft -> Text(draft.ifBlank { "Untitled" }, maxLines = 1, style = MaterialTheme.typography.labelSmall, modifier = Modifier.clickable { caption = draft; tab = Tab.Create }) }
                                 }
                             }
                             gridItems(sortedOwnPosts, key = { it.id }) { p ->
