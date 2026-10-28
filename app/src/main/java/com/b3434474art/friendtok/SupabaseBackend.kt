@@ -56,26 +56,33 @@ object SupabaseBackend {
         }
     }
 
-    suspend fun signUp(email: String, password: String, username: String, displayName: String): String = withContext(Dispatchers.IO) {
-        require(email.contains("@")) { "Enter a valid email address." }
+    // Username-only accounts use a non-deliverable synthetic email as Supabase Auth's identifier.
+    // Email confirmation must be disabled in Supabase Auth settings for this flow to work.
+    private fun authEmail(username: String): String = username.trim().lowercase() + "@users.friendtok.invalid"
+
+    suspend fun signUp(username: String, password: String, displayName: String): String = withContext(Dispatchers.IO) {
+        val cleanUsername = username.trim().lowercase()
+        require(cleanUsername.matches(Regex("[a-z0-9_]{3,24}"))) { "Username must be 3–24 characters: letters, numbers, or underscores." }
         require(password.length >= 8) { "Password must be at least 8 characters." }
-        val auth = JSONObject().put("email", email.trim()).put("password", password)
+        val auth = JSONObject().put("email", authEmail(cleanUsername)).put("password", password)
         val result = JSONObject(request("/auth/v1/signup", "POST", auth.toString()))
         acceptSession(result)
         val user = result.optJSONObject("user") ?: result
         val id = user.optString("id").ifBlank { currentUserId ?: "" }
         if (id.isNotBlank() && isSignedIn) {
             val profile = JSONObject().put("id", id)
-                .put("username", username.trim().lowercase())
+                .put("username", cleanUsername)
                 .put("display_name", displayName.trim())
             request("/rest/v1/profiles", "POST", profile.toString(), mapOf("Prefer" to "resolution=merge-duplicates,return=minimal"))
         }
         if (isSignedIn) "Account created. You are signed in."
-        else "Account request sent. Check your email to confirm, then sign in."
+        else "No session returned. Make sure Supabase email confirmation is disabled for username-only accounts."
     }
 
-    suspend fun signIn(email: String, password: String): String = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("email", email.trim()).put("password", password)
+    suspend fun signIn(username: String, password: String): String = withContext(Dispatchers.IO) {
+        val cleanUsername = username.trim().lowercase()
+        require(cleanUsername.matches(Regex("[a-z0-9_]{3,24}"))) { "Enter your username (3–24 letters, numbers, or underscores)." }
+        val body = JSONObject().put("email", authEmail(cleanUsername)).put("password", password)
         val result = JSONObject(request("/auth/v1/token?grant_type=password", "POST", body.toString()))
         acceptSession(result)
         if (isSignedIn) "Signed in successfully." else "Sign-in response received, but no session was returned."
