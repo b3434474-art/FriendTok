@@ -6,7 +6,7 @@ FriendTok is a native Android short-video social app built with Kotlin and Jetpa
 
 The FriendTok Supabase project is configured at `https://drtyxivcbuuswbapgsmu.supabase.co`.
 
-- Email/password account creation and sign-in via Supabase Auth
+- Username/password account creation and sign-in via Supabase Auth (username mapped to a non-deliverable synthetic identifier; no email address is collected)
 - Public feed backed by the `posts` table
 - Profile records in `profiles`
 - Likes in `likes` and comments in `comments`
@@ -19,7 +19,7 @@ The FriendTok Supabase project is configured at `https://drtyxivcbuuswbapgsmu.su
 ## Implemented app features
 
 - Home feed loads public post records from Supabase
-- Email/password account UI
+- Username/password account UI with no email field
 - Profile creation/editing
 - Record video through the phone's camera app (60-second capture limit requested)
 - Pick a video from the gallery and upload it to Supabase Storage when signed in (100 MB maximum)
@@ -37,7 +37,7 @@ The FriendTok Supabase project is configured at `https://drtyxivcbuuswbapgsmu.su
 - Likes/comments are connected to database writes, but the full social UX (counts, persistent liked-state display, threaded/realtime updates, and polished error states) still needs testing and refinement.
 - No reporting, blocking, moderation, or other safety/moderation tools are included, as requested.
 - Public videos can be viewed by anyone with access to the public feed. People may copy or record public content.
-- Account email confirmation behavior depends on the Supabase Auth settings.
+- **Required one-time Supabase setting:** open Authentication → Sign In / Providers → Email and turn off **Confirm email**. Username-only accounts use a non-deliverable identifier, so email confirmation must be disabled or users cannot complete sign-in. This also means users cannot use email-based password recovery.
 
 ## Build locally
 
