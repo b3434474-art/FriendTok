@@ -34,6 +34,7 @@ object SupabaseBackend {
     data class Profile(val id: String, val username: String, val displayName: String, val bio: String, val avatarUrl: String?)
     data class ProfileStats(val followers: Long, val following: Long, val videos: Long, val views: Long)
     data class CommunityPost(val id: String, val userId: String, val body: String, val createdAt: String)
+    data class CreatorItem(val id: String, val title: String, val description: String = "")
 
     val userId: String? get() = currentUserId
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank() && !currentUserId.isNullOrBlank()
@@ -221,6 +222,40 @@ object SupabaseBackend {
         } else {
             request("/rest/v1/likes?post_id=eq.$postId&user_id=eq.$id", "DELETE")
         }
+    }
+
+
+    suspend fun createFeedPost(body: String) = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to create a post.")
+        require(body.isNotBlank() && body.length <= 2000) { "Posts must be 1–2000 characters." }
+        request("/rest/v1/feed_posts", "POST", JSONObject().put("user_id", id).put("body", body.trim()).toString(), mapOf("Prefer" to "return=minimal"))
+    }
+
+    suspend fun createPlaylist(title: String, description: String, isPublic: Boolean = true): CreatorItem = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to create a playlist.")
+        require(title.isNotBlank() && title.length <= 100) { "Playlist title must be 1–100 characters." }
+        val rows = JSONArray(request("/rest/v1/playlists?select=id,title,description", "POST",
+            JSONObject().put("user_id", id).put("title", title.trim()).put("description", description.take(500)).put("is_public", isPublic).toString(),
+            mapOf("Prefer" to "return=representation"))).getJSONObject(0)
+        CreatorItem(rows.getString("id"), rows.getString("title"), rows.optString("description"))
+    }
+
+    suspend fun createPodcast(title: String, description: String): CreatorItem = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in to create a podcast.")
+        require(title.isNotBlank() && title.length <= 100) { "Podcast title must be 1–100 characters." }
+        val rows = JSONArray(request("/rest/v1/podcasts?select=id,title,description", "POST",
+            JSONObject().put("user_id", id).put("title", title.trim()).put("description", description.take(1000)).toString(),
+            mapOf("Prefer" to "return=representation"))).getJSONObject(0)
+        CreatorItem(rows.getString("id"), rows.getString("title"), rows.optString("description"))
+    }
+
+    suspend fun createLiveSession(title: String): CreatorItem = withContext(Dispatchers.IO) {
+        val id = currentUserId ?: error("Sign in before setting up a live session.")
+        require(title.isNotBlank() && title.length <= 100) { "Live title must be 1–100 characters." }
+        val rows = JSONArray(request("/rest/v1/live_sessions?select=id,title", "POST",
+            JSONObject().put("user_id", id).put("title", title.trim()).put("status", "scheduled").toString(),
+            mapOf("Prefer" to "return=representation"))).getJSONObject(0)
+        CreatorItem(rows.getString("id"), rows.getString("title"))
     }
 
     suspend fun loadCommunityPosts(profileId: String): List<CommunityPost> = withContext(Dispatchers.IO) {
