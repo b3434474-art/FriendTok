@@ -1,6 +1,8 @@
 package com.b3434474art.friendtok
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
@@ -9,6 +11,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import io.livekit.android.LiveKit
+import io.livekit.android.room.Room
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -99,7 +104,12 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val posts = remember { mutableStateListOf<Post>() }
+    var activeLiveRoom by remember { mutableStateOf<Room?>(null) }
     val isSignedIn = SupabaseBackend.isSignedIn
+
+    DisposableEffect(Unit) {
+        onDispose { activeLiveRoom?.disconnect() }
+    }
 
     fun runTask(task: suspend () -> String) {
         scope.launch {
@@ -138,6 +148,32 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                 followers = stats.followers
                 followingCount = stats.following
                 profileViews = stats.views
+            }
+        }
+    }
+
+
+    val livePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.CAMERA] == true && grants[Manifest.permission.RECORD_AUDIO] == true
+        if (!granted) {
+            message = "Camera and microphone permissions are required to go live."
+        } else if (!SupabaseBackend.isSignedIn) {
+            message = "Sign in from Profile before going live."
+        } else {
+            runTask {
+                val credentials = SupabaseBackend.requestLiveKitToken("", "publisher")
+                val room = LiveKit.create(context)
+                activeLiveRoom = room
+                try {
+                    room.connect(credentials.serverUrl, credentials.token)
+                    room.localParticipant.setCameraEnabled(true)
+                    room.localParticipant.setMicrophoneEnabled(true)
+                    "You're live! Room: ${credentials.roomName}. Keep FriendTok open while broadcasting."
+                } catch (e: Exception) {
+                    room.disconnect()
+                    activeLiveRoom = null
+                    throw e
+                }
             }
         }
     }
@@ -287,12 +323,43 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         "live" -> {
                             Text("Go live", style = MaterialTheme.typography.headlineSmall)
                             OutlinedTextField(creatorTitle, { creatorTitle = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Live stream title") }, singleLine = true)
-                            Text("Live video needs a streaming provider. FriendTok will use LiveKit for real-time video; its server credentials must be configured securely before broadcasting can start.", style = MaterialTheme.typography.bodySmall)
-                            Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
-                                runTask { SupabaseBackend.createLiveSession(creatorTitle); creatorTitle = ""; createMode = "menu"; "Live session listing saved. Streaming provider setup is still required before anyone can watch live video." }
-                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Sensors, null); Text("Set up live session") }
-                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before setting up a live session.")
-                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                            Text("FriendTok uses LiveKit for real-time camera and microphone streaming. Keep the app open while live.", style = MaterialTheme.typography.bodySmall)
+                            if (activeLiveRoom == null) {
+                                Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
+                                    val cameraGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                                    val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                    if (cameraGranted && micGranted) {
+                                        runTask {
+                                            val credentials = SupabaseBackend.requestLiveKitToken("", "publisher")
+                                            val room = LiveKit.create(context)
+                                            activeLiveRoom = room
+                                            try {
+                                                room.connect(credentials.serverUrl, credentials.token)
+                                                room.localParticipant.setCameraEnabled(true)
+                                                room.localParticipant.setMicrophoneEnabled(true)
+                                                "You're live! Room: ${credentials.roomName}. Keep FriendTok open while broadcasting."
+                                            } catch (e: Exception) {
+                                                room.disconnect()
+                                                activeLiveRoom = null
+                                                throw e
+                                            }
+                                        }
+                                    } else {
+                                        livePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Sensors, null); Text("Start broadcasting") }
+                            } else {
+                                Text("LIVE • Broadcasting camera and microphone")
+                                Button(onClick = {
+                                    activeLiveRoom?.disconnect()
+                                    activeLiveRoom = null
+                                    message = "Livestream ended."
+                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                                    Icon(Icons.Default.Stop, null); Text("End livestream")
+                                }
+                            }
+                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before going live.")
+                            TextButton(onClick = { if (activeLiveRoom == null) createMode = "menu" }) { Text("Back") }
                         }
                     }
                 }
