@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab { Home, Discover, Create, Likes, Profile, CreatorProfile }
 private data class Post(
     val id: String, val uri: String, val caption: String, val user: String,
-    val liked: Boolean = false, val comments: List<String> = emptyList(), val ownerId: String = ""
+    val liked: Boolean = false, val comments: List<String> = emptyList(), val ownerId: String = "", val viewCount: Int = 0
 )
 
 @Composable
@@ -79,7 +79,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var creatorAvatar by remember { mutableStateOf<String?>(null) }
     var creatorBio by remember { mutableStateOf("") }
     var creatorFollowers by remember { mutableLongStateOf(0L) }
-    var creatorFollowing by remember { mutableLongStateOf(false) }
+    var creatorFollowing by remember { mutableStateOf(false) }
     var draftCaptions by remember { mutableStateOf(context.getSharedPreferences("friendtok_drafts", 0).getStringSet("captions", emptySet())?.toList() ?: emptyList()) }
     var password by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
@@ -90,6 +90,11 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var postBody by remember { mutableStateOf("") }
     var commentText by remember { mutableStateOf("") }
     var commentFor by remember { mutableStateOf<String?>(null) }
+    var profileSection by remember { mutableStateOf("Videos") }
+    var profileSort by remember { mutableStateOf("Latest") }
+    var communityOpen by remember { mutableStateOf(false) }
+    var communityText by remember { mutableStateOf("") }
+    val communityPosts = remember { mutableStateListOf<SupabaseBackend.CommunityPost>() }
     var message by remember { mutableStateOf("Connecting to FriendTok…") }
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -110,7 +115,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
         try {
             val remote = SupabaseBackend.loadPublicFeed()
             posts.clear()
-            posts.addAll(remote.map { Post(it.id, SupabaseBackend.publicVideoUrl(it.videoPath), it.caption, it.userId.take(8), ownerId = it.userId) })
+            posts.addAll(remote.map { Post(it.id, SupabaseBackend.publicVideoUrl(it.videoPath), it.caption, it.userId.take(8), ownerId = it.userId, viewCount = it.viewCount) })
             message = "Online feed loaded: " + posts.size + " videos."
         } catch (e: Exception) {
             message = "Could not load online feed: " + (e.message ?: "check your connection")
