@@ -65,8 +65,8 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data
-        if (result.resultCode == RESULT_OK && uri != null) { posts.add(0, Post(nextId++, uri.toString(), caption.ifBlank { "My video" }, "@$user")); caption = ""; message = "Recording added."; tab = Tab.Home }
-        else if (result.resultCode == RESULT_OK) message = "Camera did not return a video link."
+        if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) { posts.add(0, Post(nextId++, uri.toString(), caption.ifBlank { "My video" }, "@$user")); caption = ""; message = "Recording added."; tab = Tab.Home }
+        else if (result.resultCode == android.app.Activity.RESULT_OK) message = "Camera did not return a video link."
     }
     Scaffold(bottomBar = {
         NavigationBar { Tab.entries.forEach { t ->
