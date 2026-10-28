@@ -84,6 +84,10 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var password by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var caption by remember { mutableStateOf("") }
+    var createMode by remember { mutableStateOf("menu") }
+    var creatorTitle by remember { mutableStateOf("") }
+    var creatorDescription by remember { mutableStateOf("") }
+    var postBody by remember { mutableStateOf("") }
     var commentText by remember { mutableStateOf("") }
     var commentFor by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf("Connecting to FriendTok…") }
@@ -203,20 +207,100 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                     }, { commentFor = p.id }) } }
                 }
                 Tab.Create -> {
-                    Text("Create a video", style = MaterialTheme.typography.headlineSmall)
-                    OutlinedTextField(caption, { caption = it }, Modifier.fillMaxWidth(), label = { Text("Caption") })
-                    OutlinedButton(onClick = {
-                        val saved = (draftCaptions + caption).distinct()
-                        context.getSharedPreferences("friendtok_drafts", 0).edit().putStringSet("captions", saved.toSet()).apply()
-                        draftCaptions = saved
-                        message = "Draft saved on this device."
-                    }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null); Text("Save draft") }
-                    Text("Sign in to upload videos to the public feed. Maximum upload size: 100 MB.", style = MaterialTheme.typography.bodySmall)
-                    Button(enabled = !busy, onClick = { camera.launch(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 60) }) }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Videocam, null); Text("Record video (60 sec max)")
-                    }
-                    Button(enabled = !busy, onClick = { gallery.launch("video/*") }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Add, null); Text("Choose and upload from gallery")
+                    when (createMode) {
+                        "menu" -> {
+                            Text("Create", style = MaterialTheme.typography.headlineSmall)
+                            Text("Choose what you want to make.")
+                            Spacer(Modifier.height(8.dp))
+                            Card(Modifier.fillMaxWidth().clickable { createMode = "upload" }) {
+                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(36.dp))
+                                    Column { Text("Upload videos", style = MaterialTheme.typography.titleMedium); Text("Choose a video or record one") }
+                                }
+                            }
+                            Card(Modifier.fillMaxWidth().clickable { createMode = "live" }) {
+                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Icon(Icons.Default.Sensors, null, modifier = Modifier.size(36.dp))
+                                    Column { Text("Go live", style = MaterialTheme.typography.titleMedium); Text("Set up a live session") }
+                                }
+                            }
+                            Card(Modifier.fillMaxWidth().clickable { createMode = "post"; postBody = "" }) {
+                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Icon(Icons.Default.EditNote, null, modifier = Modifier.size(36.dp))
+                                    Column { Text("Create post", style = MaterialTheme.typography.titleMedium); Text("Share a text update") }
+                                }
+                            }
+                            Card(Modifier.fillMaxWidth().clickable { createMode = "playlist"; creatorTitle = ""; creatorDescription = "" }) {
+                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Icon(Icons.Default.PlaylistAdd, null, modifier = Modifier.size(36.dp))
+                                    Column { Text("New playlist", style = MaterialTheme.typography.titleMedium); Text("Organize videos into a playlist") }
+                                }
+                            }
+                            Card(Modifier.fillMaxWidth().clickable { createMode = "podcast"; creatorTitle = ""; creatorDescription = "" }) {
+                                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Icon(Icons.Default.Podcasts, null, modifier = Modifier.size(36.dp))
+                                    Column { Text("New podcast", style = MaterialTheme.typography.titleMedium); Text("Create a podcast page") }
+                                }
+                            }
+                        }
+                        "upload" -> {
+                            Text("Upload videos", style = MaterialTheme.typography.headlineSmall)
+                            OutlinedTextField(caption, { caption = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("Caption") })
+                            OutlinedButton(onClick = {
+                                val saved = (draftCaptions + caption).distinct()
+                                context.getSharedPreferences("friendtok_drafts", 0).edit().putStringSet("captions", saved.toSet()).apply()
+                                draftCaptions = saved
+                                message = "Draft saved on this device."
+                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null); Text("Save draft") }
+                            Text("Sign in to publish. Maximum upload size: 100 MB.", style = MaterialTheme.typography.bodySmall)
+                            Button(enabled = !busy, onClick = { camera.launch(Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply { putExtra(MediaStore.EXTRA_DURATION_LIMIT, 60) }) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Videocam, null); Text("Record video (60 sec max)")
+                            }
+                            Button(enabled = !busy, onClick = { gallery.launch("video/*") }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Add, null); Text("Choose and upload from gallery")
+                            }
+                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                        }
+                        "post" -> {
+                            Text("Create post", style = MaterialTheme.typography.headlineSmall)
+                            OutlinedTextField(postBody, { postBody = it.take(2000) }, Modifier.fillMaxWidth().heightIn(min = 140.dp), label = { Text("What's happening?") }, supportingText = { Text("${postBody.length}/2000") })
+                            Button(enabled = !busy && SupabaseBackend.isSignedIn && postBody.isNotBlank(), onClick = {
+                                runTask { SupabaseBackend.createFeedPost(postBody); postBody = ""; createMode = "menu"; "Post published to FriendTok." }
+                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Publish, null); Text("Publish post") }
+                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before publishing.")
+                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                        }
+                        "playlist" -> {
+                            Text("New playlist", style = MaterialTheme.typography.headlineSmall)
+                            OutlinedTextField(creatorTitle, { creatorTitle = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Playlist name") }, singleLine = true)
+                            OutlinedTextField(creatorDescription, { creatorDescription = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("Description (optional)") })
+                            Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
+                                runTask { SupabaseBackend.createPlaylist(creatorTitle, creatorDescription); creatorTitle = ""; creatorDescription = ""; createMode = "menu"; "Playlist saved to your account." }
+                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PlaylistAdd, null); Text("Create playlist") }
+                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before creating playlists.")
+                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                        }
+                        "podcast" -> {
+                            Text("New podcast", style = MaterialTheme.typography.headlineSmall)
+                            OutlinedTextField(creatorTitle, { creatorTitle = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Podcast title") }, singleLine = true)
+                            OutlinedTextField(creatorDescription, { creatorDescription = it.take(1000) }, Modifier.fillMaxWidth(), label = { Text("Description") })
+                            Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
+                                runTask { SupabaseBackend.createPodcast(creatorTitle, creatorDescription); creatorTitle = ""; creatorDescription = ""; createMode = "menu"; "Podcast page created. Episodes can be added after audio hosting is connected." }
+                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Podcasts, null); Text("Create podcast") }
+                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before creating podcasts.")
+                            Text("This creates the podcast page; audio episode publishing is not connected yet.", style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                        }
+                        "live" -> {
+                            Text("Go live", style = MaterialTheme.typography.headlineSmall)
+                            OutlinedTextField(creatorTitle, { creatorTitle = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Live stream title") }, singleLine = true)
+                            Text("This saves a live-session listing. Actual live video needs a streaming provider, which isn't connected yet.", style = MaterialTheme.typography.bodySmall)
+                            Button(enabled = !busy && SupabaseBackend.isSignedIn && creatorTitle.isNotBlank(), onClick = {
+                                runTask { SupabaseBackend.createLiveSession(creatorTitle); creatorTitle = ""; createMode = "menu"; "Live session listing saved. Live video streaming is not active yet." }
+                            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Sensors, null); Text("Set up live session") }
+                            if (!SupabaseBackend.isSignedIn) Text("Sign in from your Profile before setting up a live session.")
+                            TextButton(onClick = { createMode = "menu" }) { Text("Back") }
+                        }
                     }
                 }
                 Tab.Likes -> {
