@@ -163,7 +163,7 @@ object SupabaseBackend {
         val path = "$id/avatar.$ext"
         val req = Request.Builder().url(BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/friendtok-avatars/" + path)
             .header("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY).header("Authorization", "Bearer " + (accessToken ?: error("Sign in first.")))
-            .header("Content-Type", mime).header("x-upsert", "true").put(bytes.toRequestBody(mime.toMediaType())).build()
+             .header("Content-Type", mime).header("x-upsert", "true").post(bytes.toRequestBody(mime.toMediaType())).build()
         http.newCall(req).execute().use { if (!it.isSuccessful) error("Avatar upload failed (${it.code}).") }
         val url = BuildConfig.SUPABASE_URL.trimEnd('/') + "/storage/v1/object/public/friendtok-avatars/" + path
         request("/rest/v1/profiles?id=eq.$id", "PATCH", JSONObject().put("avatar_url", url).toString(), mapOf("Prefer" to "return=minimal"))
