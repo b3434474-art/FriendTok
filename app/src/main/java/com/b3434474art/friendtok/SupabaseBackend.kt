@@ -35,6 +35,7 @@ object SupabaseBackend {
     data class ProfileStats(val followers: Long, val following: Long, val videos: Long, val views: Long)
     data class CommunityPost(val id: String, val userId: String, val body: String, val createdAt: String)
     data class CreatorItem(val id: String, val title: String, val description: String = "")
+    data class LiveKitCredentials(val serverUrl: String, val token: String, val roomName: String, val role: String, val expiresInSeconds: Int)
 
     val userId: String? get() = currentUserId
     val isSignedIn: Boolean get() = !accessToken.isNullOrBlank() && !currentUserId.isNullOrBlank()
@@ -247,6 +248,34 @@ object SupabaseBackend {
             JSONObject().put("user_id", id).put("title", title.trim()).put("description", description.take(1000)).toString(),
             mapOf("Prefer" to "return=representation"))).getJSONObject(0)
         CreatorItem(rows.getString("id"), rows.getString("title"), rows.optString("description"))
+    }
+
+
+    suspend fun requestLiveKitToken(roomName: String, role: String): LiveKitCredentials = withContext(Dispatchers.IO) {
+        val sessionToken = accessToken ?: error("Sign in before going live.")
+        require(role == "publisher" || role == "viewer") { "Invalid live role." }
+        val payload = JSONObject().put("roomName", roomName).put("role", role)
+        val tokenRequest = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/livekit-token")
+            .header("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY)
+            .header("Authorization", "Bearer $sessionToken")
+            .header("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+        http.newCall(tokenRequest).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+            val json = runCatching { JSONObject(responseText) }.getOrElse { JSONObject() }
+            if (!response.isSuccessful) {
+                throw IllegalStateException(json.optString("error").ifBlank { "Could not get live credentials (HTTP " + response.code + ")." })
+            }
+            LiveKitCredentials(
+                serverUrl = json.getString("serverUrl"),
+                token = json.getString("token"),
+                roomName = json.getString("roomName"),
+                role = json.getString("role"),
+                expiresInSeconds = json.optInt("expiresInSeconds", 600)
+            )
+        }
     }
 
     suspend fun createLiveSession(title: String): CreatorItem = withContext(Dispatchers.IO) {
