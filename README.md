@@ -1,30 +1,43 @@
 # FriendTok
 
-FriendTok is a native Android short-video app starter built with Kotlin and Jetpack Compose.
+FriendTok is a native Android short-video social app built with Kotlin and Jetpack Compose.
 
-## Implemented in this starter
+## Online backend
 
-- Home feed for videos selected or recorded on this device
-- Record video using the phone's camera app (60-second capture limit requested)
-- Pick a video from the device gallery
-- Open/play a selected video using an installed video player
-- Local caption text, likes, comments, and caption/creator search
-- Editable local display name, username, and bio
+The FriendTok Supabase project is configured at `https://drtyxivcbuuswbapgsmu.supabase.co`.
+
+- Email/password account creation and sign-in via Supabase Auth
+- Public feed backed by the `posts` table
+- Profile records in `profiles`
+- Likes in `likes` and comments in `comments`
+- Public video bucket named `friendtok-videos`
+- Row Level Security enabled on all four public tables
+- Users can edit their own profile and posts; authenticated users can add/remove their own likes and add their own comments
+- Public video reading; uploads and deletes restricted to the signed-in user's own storage folder
+- Android uses the project's publishable key only. Never put a Supabase service-role or secret key in the app or this public repository.
+
+## Implemented app features
+
+- Home feed loads public post records from Supabase
+- Email/password account UI
+- Profile creation/editing
+- Record video through the phone's camera app (60-second capture limit requested)
+- Pick a video from the gallery and upload it to Supabase Storage when signed in (100 MB maximum)
+- Public video playback through an installed video player
+- Caption search, likes, and comments connected to Supabase endpoints
 - Dark/light theme switch
-- GitHub Actions workflow intended to build a debug APK
 - Android secure-window flag to help block screenshots and supported screen recordings
+- GitHub Actions workflow intended to build a debug APK
 
-## Important limits
+## Current limitations
 
-You asked to leave out **the online backend and safety/moderation features**. This means this version is a local prototype, not a real multi-user social network:
-
-- There is no sign-up/sign-in authentication.
-- Profiles, videos, likes, and comments are held in app memory and are not synced to other phones. Current prototype data may reset when the app restarts.
-- Videos are selected locally; there is no upload/storage service or public online feed.
-- Discover searches only the local videos currently loaded in the app.
-- No reporting, blocking, moderation, or other safety tools are included.
-- The app uses Android's external camera app. Some camera apps do not return a video URI, in which case FriendTok cannot add that recording to its feed.
-- Video previews are a placeholder; tapping them opens the selected clip in another video player.
+- This is an early prototype and has not yet been verified by a successful Android build or end-to-end device test.
+- The feed currently displays a shortened user ID rather than resolving every username from the profiles table.
+- Some camera apps do not return a video URI; if that happens, choose the saved video from the gallery to upload it.
+- Likes/comments are connected to database writes, but the full social UX (counts, persistent liked-state display, threaded/realtime updates, and polished error states) still needs testing and refinement.
+- No reporting, blocking, moderation, or other safety/moderation tools are included, as requested.
+- Public videos can be viewed by anyone with access to the public feed. People may copy or record public content.
+- Account email confirmation behavior depends on the Supabase Auth settings.
 
 ## Build locally
 
@@ -39,13 +52,13 @@ Requirements: JDK 17 and Gradle 8.9 or compatible Android Studio.
 
 3. The debug APK should be at `app/build/outputs/apk/debug/app-debug.apk`.
 
-The GitHub Actions workflow uploads a debug APK as a workflow artifact when its build succeeds. The APK has not been verified as successfully built yet. It is not a signed release APK.
+The GitHub Actions workflow uploads a debug APK as a workflow artifact if the build succeeds. The APK is not a signed release APK.
 
 ## Privacy notes
 
 Android's secure-window flag can help block screenshots and supported screen recordings while the protected app window is visible. It cannot stop someone filming the display with another device, and it is not a guarantee across every device or OS version.
 
-Never commit signing keys, passwords, or other secrets to this public repository.
+Never commit signing keys, passwords, Supabase service-role keys, or other secrets.
 
 ## License
 
