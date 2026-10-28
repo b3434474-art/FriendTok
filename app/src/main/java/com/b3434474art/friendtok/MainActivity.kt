@@ -14,6 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.viewinterop.AndroidView
@@ -51,7 +54,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-private enum class Tab { Home, Discover, Create, Likes, Profile }
+private enum class Tab { Home, Discover, Create, Likes, Profile, CreatorProfile }
 private data class Post(
     val id: String, val uri: String, val caption: String, val user: String,
     val liked: Boolean = false, val comments: List<String> = emptyList()
@@ -185,7 +188,55 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                         if (SupabaseBackend.isSignedIn) runTask { SupabaseBackend.setLike(p.id, false); refresh++; "Like removed." }
                     }, { commentFor = p.id }) } }
                 }
+                Tab.CreatorProfile -> {
+                    Text("Creator profile", style = MaterialTheme.typography.headlineSmall)
+                    Text("Creator details will appear here.")
+                }
                 Tab.Profile -> {
+                    if (isSignedIn) {
+                        val ownPosts = posts.filter { it.user == (SupabaseBackend.userId?.take(8) ?: "") }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(88.dp), tint = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text(name, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                                Text("@$user", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("0 followers  ›  ${ownPosts.size} videos", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        if (bio.isNotBlank()) Text(bio, maxLines = 2)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { message = "Analytics will be available when view tracking is added." }) { Icon(Icons.Default.BarChart, null); Text("Analytics") }
+                            OutlinedButton(onClick = { message = "Edit your display name and bio below." }) { Icon(Icons.Default.Edit, null); Text("Edit profile") }
+                        }
+                        Button(onClick = { message = "Community features are coming soon." }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Groups, null); Text("Community") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                            listOf("Shorts", "Posts").forEach { section ->
+                                Column(Modifier.clickable { profileSection = section }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(section, color = if (profileSection == section) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (profileSection == section) Box(Modifier.padding(top = 4.dp).width(34.dp).height(3.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)))
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Latest", "Popular", "Oldest").forEach { sort -> FilterChip(selected = profileSort == sort, onClick = { profileSort = sort }, label = { Text(sort) }) }
+                        }
+                        val sortedOwnPosts = when(profileSort) { "Oldest" -> ownPosts.reversed(); "Popular" -> ownPosts.reversed(); else -> ownPosts }
+                        LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            item {
+                                Column(Modifier.fillMaxWidth().clickable { message = "Draft saving is not available yet." }.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) { Icon(Icons.Default.InsertDriveFile, null, modifier = Modifier.size(28.dp)) }
+                                    Text("Drafts", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            gridItems(sortedOwnPosts, key = { it.id }) { p ->
+                                Column(Modifier.fillMaxWidth().clickable { play(p.uri) }.padding(4.dp)) {
+                                    Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(Brush.linearGradient(listOf(Color(0xFF37214D), Color(0xFF111827), Color(0xFF7A2456))), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(30.dp)) }
+                                    Text(p.caption.ifBlank { "Video" }, maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                                    Text("0 views", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    } else {
                     Text("Account & profile", style = MaterialTheme.typography.headlineSmall)
                     Text(if (isSignedIn) "Signed in to FriendTok" else "Sign in or create an account")
                     OutlinedTextField(user, { user = it.filter { c -> c.isLetterOrDigit() || c == '_' }.take(24) }, Modifier.fillMaxWidth(), label = { Text("Username (3–24 letters, numbers, or _)") }, singleLine = true)
@@ -204,6 +255,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                     Spacer(Modifier.height(12.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Dark mode"); Switch(dark, setDark)
+                    }
                     }
                 }
             }
