@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab { Home, Discover, Create, Likes, Profile, CreatorProfile }
 private data class Post(
     val id: String, val uri: String, val caption: String, val user: String,
-    val liked: Boolean = false, val comments: List<String> = emptyList()
+    val liked: Boolean = false, val comments: List<String> = emptyList(), val ownerId: String = ""
 )
 
 @Composable
@@ -74,6 +74,12 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
     var followers by remember { mutableLongStateOf(0L) }
     var followingCount by remember { mutableLongStateOf(0L) }
     var profileViews by remember { mutableLongStateOf(0L) }
+    var creatorProfileId by remember { mutableStateOf<String?>(null) }
+    var creatorProfileName by remember { mutableStateOf("") }
+    var creatorAvatar by remember { mutableStateOf<String?>(null) }
+    var creatorBio by remember { mutableStateOf("") }
+    var creatorFollowers by remember { mutableLongStateOf(0L) }
+    var creatorFollowing by remember { mutableLongStateOf(false) }
     var draftCaptions by remember { mutableStateOf(context.getSharedPreferences("friendtok_drafts", 0).getStringSet("captions", emptySet())?.toList() ?: emptyList()) }
     var password by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
@@ -100,7 +106,7 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
         try {
             val remote = SupabaseBackend.loadPublicFeed()
             posts.clear()
-            posts.addAll(remote.map { Post(it.id, SupabaseBackend.publicVideoUrl(it.videoPath), it.caption, it.userId.take(8)) })
+            posts.addAll(remote.map { Post(it.id, SupabaseBackend.publicVideoUrl(it.videoPath), it.caption, it.userId.take(8), ownerId = it.userId) })
             message = "Online feed loaded: " + posts.size + " videos."
         } catch (e: Exception) {
             message = "Could not load online feed: " + (e.message ?: "check your connection")
@@ -180,7 +186,8 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                                     if (!SupabaseBackend.isSignedIn) message = "Sign in to like videos."
                                     else runTask { SupabaseBackend.setLike(p.id, !p.liked); refresh++; "Like updated." }
                                 },
-                                comment = { commentFor = p.id }
+                                comment = { commentFor = p.id },
+                                openProfile = { creatorProfileId = p.ownerId; tab = Tab.CreatorProfile }
                             )
                         }
                     }
@@ -222,8 +229,41 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
                     }, { commentFor = p.id }) } }
                 }
                 Tab.CreatorProfile -> {
-                    Text("Creator profile", style = MaterialTheme.typography.headlineSmall)
-                    Text("Creator details will appear here.")
+                    val creatorId = creatorProfileId
+                    LaunchedEffect(creatorId) {
+                        if (!creatorId.isNullOrBlank()) runCatching {
+                            val profile = SupabaseBackend.loadProfile(creatorId)
+                            creatorProfileName = profile.displayName.ifBlank { profile.username }
+                            creatorAvatar = profile.avatarUrl
+                            creatorBio = profile.bio
+                            creatorFollowers = SupabaseBackend.profileStats(creatorId).followers
+                            creatorFollowing = SupabaseBackend.isFollowing(creatorId)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        if (creatorAvatar != null) AsyncImage(model = creatorAvatar, contentDescription = "Creator profile picture", modifier = Modifier.size(82.dp), contentScale = ContentScale.Crop)
+                        else Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(82.dp), tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text(creatorProfileName.ifBlank { "Creator" }, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Text("@${posts.firstOrNull { it.ownerId == creatorId }?.user ?: "creator"}")
+                            Text("$creatorFollowers followers • ${posts.count { it.ownerId == creatorId }} videos", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (creatorBio.isNotBlank()) Text(creatorBio)
+                    if (creatorId != SupabaseBackend.userId) Button(enabled = SupabaseBackend.isSignedIn, onClick = {
+                        runTask { SupabaseBackend.setFollowing(creatorId ?: return@runTask "Creator not found.", !creatorFollowing); creatorFollowing = !creatorFollowing; "Follow status updated." }
+                    }, modifier = Modifier.fillMaxWidth()) { Text(if (creatorFollowing) "Following" else "Follow") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Videos", "Shorts", "Posts").forEach { FilterChip(selected = profileSection == it, onClick = { profileSection = it }, label = { Text(it) }) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Latest", "Popular", "Oldest").forEach { FilterChip(selected = profileSort == it, onClick = { profileSort = it }, label = { Text(it) }) } }
+                    val creatorPosts = posts.filter { it.ownerId == creatorId }
+                    val sortedCreatorPosts = when (profileSort) { "Oldest" -> creatorPosts.reversed(); "Popular" -> creatorPosts.sortedByDescending { it.viewCount }; else -> creatorPosts }
+                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        gridItems(sortedCreatorPosts, key = { it.id }) { p -> Column(Modifier.fillMaxWidth().clickable { play(p.uri) }.padding(4.dp)) {
+                            Box(Modifier.fillMaxWidth().aspectRatio(0.72f).background(Brush.linearGradient(listOf(Color(0xFF37214D), Color(0xFF111827), Color(0xFF7A2456))), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, null, tint = Color.White) }
+                            Text(p.caption.ifBlank { "Video" }, maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                            Text("${p.viewCount} views", style = MaterialTheme.typography.labelSmall)
+                        } }
+                    }
                 }
                 Tab.Profile -> {
                     if (isSignedIn) {
@@ -313,7 +353,9 @@ private fun FriendTok(dark: Boolean, setDark: (Boolean) -> Unit, play: (String) 
 }
 
 @Composable
-private fun SwipeFeedPost(post: Post, active: Boolean, like: () -> Unit, comment: () -> Unit) {
+private fun SwipeFeedPost(post: Post, active: Boolean, like: () -> Unit, comment: () -> Unit, openProfile: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(post.id, active) { if (active) runCatching { SupabaseBackend.recordView(post.id) } }
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -344,7 +386,10 @@ private fun SwipeFeedPost(post: Post, active: Boolean, like: () -> Unit, comment
             Modifier.align(Alignment.BottomStart).fillMaxWidth(0.78f).padding(start = 16.dp, end = 8.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("@${post.user}", color = Color.White, fontWeight = FontWeight.Bold)
+            Row(Modifier.clickable { openProfile() }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.AccountCircle, null, tint = Color.White, modifier = Modifier.size(34.dp))
+                Text("@${post.user}", color = Color.White, fontWeight = FontWeight.Bold)
+            }
             if (post.caption.isNotBlank()) Text(post.caption, color = Color.White, style = MaterialTheme.typography.bodyLarge)
             Text("Swipe up for next video", color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall)
         }
